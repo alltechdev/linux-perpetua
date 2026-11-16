@@ -1482,7 +1482,6 @@
 		bias-pull-up;
 	};
 
-
 	wcd938x_reset_default: wcd938x-reset-default-state {
 		pins = "gpio32";
 		function = "gpio";
