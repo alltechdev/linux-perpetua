@@ -4,6 +4,7 @@
 //   Copyright (c) 2013, The Linux Foundation. All rights reserved. (FIXME)
 
 #include <linux/backlight.h>
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/mod_devicetable.h>
@@ -11,6 +12,7 @@
 #include <linux/mutex.h>
 #include <linux/property.h>
 #include <linux/regulator/consumer.h>
+#include <linux/seq_file.h>
 
 #include <video/mipi_display.h>
 
@@ -317,10 +319,49 @@ static int samsung_amb655uv01_get_modes(struct drm_panel *panel,
 	return count;
 }
 
+static int samsung_amb655uv01_status_show(struct seq_file *s, void *data)
+{
+	struct drm_panel *panel = s->private;
+	struct samsung_amb655uv01 *ctx = to_samsung_amb655uv01(panel);
+	unsigned long flags;
+	u16 brightness = 0;
+	u8 power_mode = 0;
+	int power_ret, brightness_ret;
+
+	guard(mutex)(&ctx->transfer_lock);
+
+	seq_printf(s, "initialized=%u awake=%u wakes=%u blanks=%u\n",
+		   !ctx->first_prepare, ctx->awake, ctx->wake_count,
+		   ctx->blank_count);
+	if (!ctx->awake)
+		return 0;
+
+	flags = ctx->dsi->mode_flags;
+	ctx->dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+	power_ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, &power_mode);
+	brightness_ret = mipi_dsi_dcs_get_display_brightness_large(ctx->dsi,
+								 &brightness);
+	ctx->dsi->mode_flags = flags;
+
+	seq_printf(s, "power_mode=0x%02x error=%d\n", power_mode, power_ret);
+	seq_printf(s, "brightness=%u error=%d\n", brightness, brightness_ret);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(samsung_amb655uv01_status);
+
+static void samsung_amb655uv01_debugfs_init(struct drm_panel *panel,
+					  struct dentry *root)
+{
+	debugfs_create_file("panel_status", 0400, root, panel,
+			    &samsung_amb655uv01_status_fops);
+}
+
 static const struct drm_panel_funcs samsung_amb655uv01_panel_funcs = {
 	.prepare = samsung_amb655uv01_prepare,
 	.unprepare = samsung_amb655uv01_unprepare,
 	.get_modes = samsung_amb655uv01_get_modes,
+	.debugfs_init = samsung_amb655uv01_debugfs_init,
 };
 
 static int samsung_amb655uv01_bl_update_status(struct backlight_device *bl)
@@ -340,27 +381,6 @@ static int samsung_amb655uv01_bl_update_status(struct backlight_device *bl)
 
 	return ret;
 }
-
-static ssize_t panel_state_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct samsung_amb655uv01 *ctx = dev_get_drvdata(dev);
-
-	guard(mutex)(&ctx->transfer_lock);
-
-	return sysfs_emit(buf, "warm_blank=%d initialized=%d awake=%d wakes=%u blanks=%u\n",
-		ctx->keep_dsc_on_blank, !ctx->first_prepare, ctx->awake,
-		ctx->wake_count, ctx->blank_count);
-}
-static DEVICE_ATTR_RO(panel_state);
-
-static struct attribute *samsung_amb655uv01_attrs[] = {
-	&dev_attr_panel_state.attr,
-	NULL,
-};
-
-static const struct attribute_group samsung_amb655uv01_group = {
-	.attrs = samsung_amb655uv01_attrs,
-};
 
 static const struct backlight_ops samsung_amb655uv01_bl_ops = {
 	.update_status = samsung_amb655uv01_bl_update_status,
@@ -484,12 +504,6 @@ static int samsung_amb655uv01_probe(struct mipi_dsi_device *dsi)
 	ret = mipi_dsi_attach(dsi);
 	if (ret < 0) {
 		dev_err(dev, "Failed to attach to DSI host: %d\n", ret);
-		drm_panel_remove(&ctx->panel);
-		return ret;
-	}
-	ret = devm_device_add_group(dev, &samsung_amb655uv01_group);
-	if (ret) {
-		mipi_dsi_detach(dsi);
 		drm_panel_remove(&ctx->panel);
 		return ret;
 	}
