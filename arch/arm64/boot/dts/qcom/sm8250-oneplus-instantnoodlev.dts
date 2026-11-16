@@ -1055,7 +1055,7 @@
 		compatible = "nxp,tfa9874";
 		reg = <0x34>;
 		vddd-supply = <&vreg_s4a_1p8>;
-		reset-gpios = <&tlmm 91 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&tlmm 91 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&spkr_1_sd_active>;
 		sound-name-prefix = "SpkrLeft";
@@ -1066,7 +1066,7 @@
 		compatible = "nxp,tfa9874";
 		reg = <0x35>;
 		vddd-supply = <&vreg_s4a_1p8>;
-		reset-gpios = <&tlmm 99 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&tlmm 99 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&spkr_2_sd_active>;
 		sound-name-prefix = "SpkrRight";
