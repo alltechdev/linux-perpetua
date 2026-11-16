@@ -84,7 +84,7 @@
 		ranges;
 
 		stdout-path = "serial0:115200n8";
-		bootargs = "panic=10 op8.root=userdata net.ifnames=0 androidboot.slot_suffix=_b";
+		bootargs = "rdinit=/init panic=10";
 
 		fdt-handoff {
 			stock-compatible = "qcom,kona";
