@@ -51,7 +51,7 @@ struct samsung_amb655uv01 *to_samsung_amb655uv01(struct drm_panel *panel)
 }
 
 static void samsung_amb655uv01_write(struct mipi_dsi_multi_context *ctx,
-                                     const void *data, size_t len)
+				     const void *data, size_t len)
 {
 	struct mipi_dsi_device *dsi = ctx->dsi;
 	const struct mipi_dsi_host_ops *ops = dsi->host->ops;
@@ -365,7 +365,7 @@ static const struct drm_display_mode samsung_amb655uv01_modes[] = {
 };
 
 static int samsung_amb655uv01_get_modes(struct drm_panel *panel,
-                                        struct drm_connector *connector)
+					struct drm_connector *connector)
 {
 	struct samsung_amb655uv01 *ctx = to_samsung_amb655uv01(panel);
 	int count = 0;
