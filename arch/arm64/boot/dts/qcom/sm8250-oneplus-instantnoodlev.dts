@@ -87,7 +87,7 @@
 		bootargs = "panic=10 op8.root=userdata net.ifnames=0 androidboot.slot_suffix=_b";
 
 		fdt-handoff {
-			stock-compatible = "qcom,kona-mtp";
+			stock-compatible = "qcom,kona";
 			stock-bootargs = "androidboot.project_name=19867";
 			keep-initrd;
 		};
