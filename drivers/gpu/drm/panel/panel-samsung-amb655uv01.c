@@ -472,6 +472,7 @@ static int samsung_amb655uv01_probe(struct mipi_dsi_device *dsi)
 
 	dsi->lanes = 4;
 	dsi->format = MIPI_DSI_FMT_RGB888;
+	dsi->mode_flags = MIPI_DSI_MODE_DSC_ALL_SLICES_IN_PKT;
 
 
 	ctx->panel.backlight = samsung_amb655uv01_create_backlight(dsi);
@@ -488,7 +489,7 @@ static int samsung_amb655uv01_probe(struct mipi_dsi_device *dsi)
 	ctx->dsc.dsc_version_major = 1;
 	ctx->dsc.dsc_version_minor = 1;
 
-	/* TODO: Pass slice_per_pkt = 2 */
+	/* Both 540-pixel slices of each line travel in one DSI packet. */
 	ctx->dsc.slice_height = 48;
 	ctx->dsc.slice_width = 540;
 	/*
