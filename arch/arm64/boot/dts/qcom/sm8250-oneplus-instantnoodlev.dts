@@ -470,10 +470,6 @@
 	model = "OnePlus8";
 
 	audio-routing =
-		"TX DMIC0", "VA DMIC01 Clock",
-		"TX DMIC1", "VA DMIC01 Clock",
-		"TX DMIC2", "VA DMIC23 Clock",
-		"TX DMIC3", "VA DMIC23 Clock",
 		/* Codec microphone bias wiring from the stock instantnoodle DT. */
 		"TX DMIC0", "MIC BIAS1",
 		"TX DMIC1", "MIC BIAS1",
