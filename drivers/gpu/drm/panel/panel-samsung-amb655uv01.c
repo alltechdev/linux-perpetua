@@ -323,28 +323,14 @@ static int samsung_amb655uv01_status_show(struct seq_file *s, void *data)
 {
 	struct drm_panel *panel = s->private;
 	struct samsung_amb655uv01 *ctx = to_samsung_amb655uv01(panel);
-	unsigned long flags;
-	u16 brightness = 0;
-	u8 power_mode = 0;
-	int power_ret, brightness_ret;
-
 	guard(mutex)(&ctx->transfer_lock);
 
 	seq_printf(s, "initialized=%u awake=%u wakes=%u blanks=%u\n",
 		   !ctx->first_prepare, ctx->awake, ctx->wake_count,
 		   ctx->blank_count);
-	if (!ctx->awake)
-		return 0;
-
-	flags = ctx->dsi->mode_flags;
-	ctx->dsi->mode_flags |= MIPI_DSI_MODE_LPM;
-	power_ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, &power_mode);
-	brightness_ret = mipi_dsi_dcs_get_display_brightness_large(ctx->dsi,
-								 &brightness);
-	ctx->dsi->mode_flags = flags;
-
-	seq_printf(s, "power_mode=0x%02x error=%d\n", power_mode, power_ret);
-	seq_printf(s, "brightness=%u error=%d\n", brightness, brightness_ret);
+	/* Live DCS readback can disturb the command-mode scanout. */
+	seq_printf(s, "brightness=%u (cached)\n",
+		   panel->backlight->props.brightness);
 
 	return 0;
 }
