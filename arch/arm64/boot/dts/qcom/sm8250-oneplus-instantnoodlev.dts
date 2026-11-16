@@ -1629,4 +1629,3 @@
 &usb_1_qmpphy_out {
 	remote-endpoint = <&pm8150b_typec_mux_in>;
 };
-
