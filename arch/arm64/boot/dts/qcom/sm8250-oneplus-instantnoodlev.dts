@@ -37,7 +37,6 @@
 /delete-node/ &spss_mem;
 /delete-node/ &cdsp_secure_heap;
 
-
 / {
 	model = "OnePlus 8 5G UW (Verizon, IN2019)";
 	compatible = "oneplus,instantnoodlev", "qcom,sm8250";
@@ -91,7 +90,6 @@
 			stock-bootargs = "androidboot.project_name=19867";
 			keep-initrd;
 		};
-
 
 		framebuffer: framebuffer@9c000000 {
 			compatible = "simple-framebuffer";
@@ -273,15 +271,6 @@
 		};
 	};
 
-	panel_avdd_5p5: regulator-panel-avdd {
-		compatible = "regulator-fixed";
-		regulator-name = "panel_avdd_5p5";
-		regulator-min-microvolt = <5500000>;
-		regulator-max-microvolt = <5500000>;
-		regulator-enable-ramp-delay = <233>;
-		regulator-boot-on;
-	};
-
 	cam_front_avdd_2p85: regulator-cam-front-avdd {
 		compatible = "regulator-fixed";
 		regulator-name = "cam_front_avdd_2p85";
@@ -400,7 +389,6 @@
 		is-compress-dai;
 	};
 };
-
 
 &tert_mi2s_active {
 	data1-pins {
@@ -1026,7 +1014,6 @@
 	};
 };
 
-
 &i2c15 {
 	status = "okay";
 	clock-frequency = <400000>;
@@ -1071,7 +1058,6 @@
 	};
 };
 
-
 &i2c16 {
 	clock-frequency = <100000>;
 	status = "okay";
@@ -1107,8 +1093,7 @@
 		compatible = "samsung,amb655uv01";
 		reg = <0>;
 		vddio-supply = <&vreg_l14a_1p8>;
-		vdd-supply = <&vreg_l11c_3p3>;
-		avdd-supply = <&panel_avdd_5p5>;
+		vci-supply = <&vreg_l11c_3p3>;
 		/* Stock ANA6705 VDDD is GPIO24. Share its existing regulator
 		 * owner so camera runtime suspend cannot remove panel power.
 		 */
@@ -1116,7 +1101,7 @@
 		vddr-supply = <&vreg_l2c_1p2>;
 		reset-gpios = <&tlmm 75 GPIO_ACTIVE_LOW>;
 
-		pinctrl-0 = <&panel_reset_pins &panel_vsync_pins &panel_vout_pins>;
+		pinctrl-0 = <&panel_reset_pins &panel_vsync_pins>;
 		pinctrl-names = "default";
 
 		status = "okay";
@@ -1484,20 +1469,6 @@
 		function = "mdp_vsync";
 		drive-strength = <16>;
 		bias-pull-down;
-	};
-
-	panel_vout_pins: panel-vout-state {
-		pins = "gpio8";
-		function = "gpio";
-		drive-strength = <16>;
-		output-high;
-	};
-
-	panel_avdd_pins: panel-avdd-state {
-		pins = "gpio61";
-		function = "gpio";
-		drive-strength = <8>;
-		output-high;
 	};
 
 	touch_irq_active: touch-irq-state {

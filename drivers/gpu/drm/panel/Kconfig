@@ -952,12 +952,13 @@ config DRM_PANEL_RONBO_RB070D30
 
 config DRM_PANEL_SAMSUNG_AMB655UV01
 	tristate "Samsung AMB655UV01 AMOLED panel"
-	depends on OF && DRM_MIPI_DSI && BACKLIGHT_CLASS_DEVICE
+	depends on GPIOLIB && OF && DRM_MIPI_DSI && BACKLIGHT_CLASS_DEVICE
+	select DRM_DISPLAY_HELPER
 	select DRM_DISPLAY_DSC_HELPER
 	help
-	  Say Y here to enable the command-mode DSC panel used by the
-	  OnePlus 8 5G UW reference port. Hardware qualification of this
-	  driver on the current kernel is still required.
+	  Say Y here to enable the Samsung AMB655UV01 1080x2400 AMOLED
+	  panel, using command-mode DSC at 60 or 90 Hz. This panel is
+	  used on the OnePlus 8 5G UW.
 
 	  To compile this driver as a module, choose M here. The module
 	  will be called panel-samsung-amb655uv01.
