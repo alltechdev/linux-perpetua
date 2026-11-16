@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// Copyright (c) 2025 FIXME
 // Generated with linux-mdss-dsi-panel-driver-generator from vendor device tree:
-//   Copyright (c) 2013, The Linux Foundation. All rights reserved. (FIXME)
+//   Copyright (c) 2013, The Linux Foundation. All rights reserved.
+// Published in Xo666/mainline-instantnoodle, commit 417fa473cdc7.
 
 #include <linux/backlight.h>
 #include <linux/debugfs.h>
@@ -323,6 +323,7 @@ static int samsung_amb655uv01_status_show(struct seq_file *s, void *data)
 {
 	struct drm_panel *panel = s->private;
 	struct samsung_amb655uv01 *ctx = to_samsung_amb655uv01(panel);
+
 	guard(mutex)(&ctx->transfer_lock);
 
 	seq_printf(s, "initialized=%u awake=%u wakes=%u blanks=%u\n",
@@ -354,12 +355,13 @@ static int samsung_amb655uv01_bl_update_status(struct backlight_device *bl)
 {
 	struct mipi_dsi_device *dsi = bl_get_data(bl);
 	struct samsung_amb655uv01 *ctx = mipi_dsi_get_drvdata(dsi);
-
-	guard(mutex)(&ctx->transfer_lock);
-	unsigned long mode_flags = dsi->mode_flags;
-	u16 brightness = backlight_get_brightness(bl);
+	unsigned long mode_flags;
+	u16 brightness;
 	int ret;
 
+	guard(mutex)(&ctx->transfer_lock);
+	mode_flags = dsi->mode_flags;
+	brightness = backlight_get_brightness(bl);
 	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
 	ret = mipi_dsi_dcs_set_display_brightness_large(dsi, brightness);
 	/* A failed transfer must not change the next command's link mode. */
@@ -526,6 +528,5 @@ static struct mipi_dsi_driver samsung_amb655uv01_driver = {
 };
 module_mipi_dsi_driver(samsung_amb655uv01_driver);
 
-MODULE_AUTHOR("linux-mdss-dsi-panel-driver-generator <fix@me>"); // FIXME
 MODULE_DESCRIPTION("DRM driver for Samsung amb655uv01 panel");
 MODULE_LICENSE("GPL");
