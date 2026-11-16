@@ -95,7 +95,7 @@ static void samsung_amb655uv01_reset(struct samsung_amb655uv01 *ctx)
 	usleep_range(10000, 11000);
 }
 
-static int samsung_amb655uv01_on(struct samsung_amb655uv01 *ctx)
+static int samsung_amb655uv01_on(struct samsung_amb655uv01 *ctx, unsigned int hz)
 {
 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
 
@@ -169,11 +169,22 @@ static int samsung_amb655uv01_on(struct samsung_amb655uv01 *ctx)
 	samsung_amb655uv01_write_seq(&dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY,
 				     0x20);
 	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x10);
+	if (hz == 90)
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x10);
+	else
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x00);
 	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
 	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
 	samsung_amb655uv01_write_seq(&dsi_ctx, MIPI_DCS_WRITE_POWER_SAVE, 0x00);
 	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	if (hz == 60) {
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x69);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0x02);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x77);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0xb3);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	}
 	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
 
 	return dsi_ctx.accum_err;
@@ -193,43 +204,19 @@ static int samsung_amb655uv01_off(struct samsung_amb655uv01 *ctx)
 	return dsi_ctx.accum_err;
 }
 
-/* Select the DDIC refresh together with the host mode. The panel's
- * timing-switch packets are byte-for-byte from the handset ANA6705 DT.
- * Atomic enable runs after the connector/CRTC states have been swapped.
- */
-static int samsung_amb655uv01_set_refresh(struct samsung_amb655uv01 *ctx)
+/* Atomic enable runs after the connector/CRTC states have been swapped. */
+static unsigned int samsung_amb655uv01_get_refresh(struct samsung_amb655uv01 *ctx)
 {
-	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
-	unsigned long flags = ctx->dsi->mode_flags;
-	unsigned int hz = 90;
-
 	if (ctx->connector && ctx->connector->state &&
 	    ctx->connector->state->crtc && ctx->connector->state->crtc->state) {
 		const struct drm_display_mode *mode =
 			&ctx->connector->state->crtc->state->adjusted_mode;
+
 		if (mode->clock)
-			hz = drm_mode_vrefresh(mode) < 75 ? 60 : 90;
+			return drm_mode_vrefresh(mode) < 75 ? 60 : 90;
 	}
-	ctx->dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
-	if (hz == 90)
-		samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x10);
-	else
-		samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x00);
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x69);
-	if (hz == 90)
-		samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0x00);
-	else
-		samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0x02);
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x77);
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0xb3);
-	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
-	ctx->dsi->mode_flags = flags;
-	if (!dsi_ctx.accum_err)
-		dev_info(&ctx->dsi->dev, "stock panel refresh=%u link-target=830000000\n", hz);
-	return dsi_ctx.accum_err;
+
+	return 90;
 }
 
 static void samsung_amb655uv01_power_off(struct samsung_amb655uv01 *ctx)
@@ -263,6 +250,7 @@ static int samsung_amb655uv01_prepare(struct drm_panel *panel)
 	struct samsung_amb655uv01 *ctx = to_samsung_amb655uv01(panel);
 	struct device *dev = &ctx->dsi->dev;
 	struct drm_dsc_picture_parameter_set pps;
+	unsigned int hz;
 	int i, ret;
 
 	guard(mutex)(&ctx->transfer_lock);
@@ -282,7 +270,8 @@ static int samsung_amb655uv01_prepare(struct drm_panel *panel)
 	}
 
 	samsung_amb655uv01_reset(ctx);
-	ret = samsung_amb655uv01_on(ctx);
+	hz = samsung_amb655uv01_get_refresh(ctx);
+	ret = samsung_amb655uv01_on(ctx, hz);
 	if (ret) {
 		dev_err(dev, "Failed to initialize panel: %d\n", ret);
 		goto power_off;
@@ -302,9 +291,6 @@ static int samsung_amb655uv01_prepare(struct drm_panel *panel)
 
 	/* Retain the reference panel's PPS settling delay. */
 	msleep(28);
-	ret = samsung_amb655uv01_set_refresh(ctx);
-	if (ret)
-		goto power_off;
 
 	return 0;
 
