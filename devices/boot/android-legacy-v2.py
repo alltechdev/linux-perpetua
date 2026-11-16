@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Pack an Android v2 boot image, preserving its separate vendor DTB section.
 
-Usage: android-legacy-v2 TEMPLATE IMAGE RAMDISK OUTPUT [EVIDENCE]
+Usage: android-legacy-v2.py TEMPLATE IMAGE RAMDISK OUTPUT [EVIDENCE]
 The template must have unsigned AVB metadata. IMAGE is an uncompressed
 ARM64 kernel with its Perpetua DTB built in. RAMDISK is gzip newc.
 Only regular host files are read; no device access or flashing is performed.

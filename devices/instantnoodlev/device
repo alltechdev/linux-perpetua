@@ -2,4 +2,4 @@
 name='OnePlus 8 5G UW (IN2019)'
 vendor=qcom
 soc=sm8250
-boot=android-legacy-v2
+boot=android-legacy-v2.py

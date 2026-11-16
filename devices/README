@@ -87,7 +87,7 @@ devices/boot holds one tool per boot chain that writes the images:
                   Usage: TEMPLATE IMAGE RAMDISK OUTPUT [EVIDENCE].
 
 
-  android-legacy-v2  Android header version 2: a gzip kernel, ramdisk and
+  android-legacy-v2.py  Android header version 2: a gzip kernel, ramdisk and
                      separate vendor DTB section in one boot partition.
                      Keeps the template's header and unsigned AVB properties.
                      Usage: TEMPLATE IMAGE RAMDISK OUTPUT [EVIDENCE].
