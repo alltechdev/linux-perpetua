@@ -416,6 +416,11 @@ static int samsung_amb655uv01_probe(struct mipi_dsi_device *dsi)
 	if (device_property_present(dev, "vddr-supply"))
 		ctx->supplies[ctx->num_supplies++].supply = "vddr";
 
+	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(ctx->reset_gpio))
+		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
+				     "Failed to get reset GPIO\n");
+
 	ret = devm_regulator_bulk_get(dev, ctx->num_supplies, ctx->supplies);
 	if (ret)
 		return dev_err_probe(dev, ret,
