@@ -1039,8 +1039,6 @@
 		reg = <0x34>;
 		vddd-supply = <&vreg_s4a_1p8>;
 		reset-gpios = <&tlmm 91 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&spkr_1_sd_active>;
 		sound-name-prefix = "SpkrLeft";
 		#sound-dai-cells = <0>;
 	};
@@ -1050,8 +1048,6 @@
 		reg = <0x35>;
 		vddd-supply = <&vreg_s4a_1p8>;
 		reset-gpios = <&tlmm 99 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&spkr_2_sd_active>;
 		sound-name-prefix = "SpkrRight";
 		nxp,tdm-slot = <1>;
 		#sound-dai-cells = <0>;
@@ -1486,21 +1482,6 @@
 		bias-pull-up;
 	};
 
-	spkr_1_sd_active: spkr-1-sd-active-state {
-		pins = "gpio126";
-		function = "gpio";
-		drive-strength = <16>;
-		bias-pull-up;
-		output-high;
-	};
-
-	spkr_2_sd_active: spkr-2-sd-active-state {
-		pins = "gpio127";
-		function = "gpio";
-		drive-strength = <16>;
-		bias-pull-up;
-		output-high;
-	};
 
 	wcd938x_reset_default: wcd938x-reset-default-state {
 		pins = "gpio32";
