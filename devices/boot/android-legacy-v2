@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
+"""Pack an Android v2 boot image, preserving its separate vendor DTB section.
+
+Usage: android-legacy-v2 TEMPLATE IMAGE RAMDISK OUTPUT [EVIDENCE]
+The template must have unsigned AVB metadata. IMAGE is an uncompressed
+ARM64 kernel with its Perpetua DTB built in. RAMDISK is gzip newc.
+Only regular host files are read; no device access or flashing is performed.
+"""
+import gzip
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import struct
+import subprocess
+import sys
+import tempfile
+
+
+def require(condition, message):
+    if not condition:
+        sys.exit(message)
+
+
+def run(*args):
+    return subprocess.check_output(list(map(str, args)))
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def read_file(path):
+    require(stat.S_ISREG(path.stat().st_mode), "inputs must be regular files")
+    return path.read_bytes()
+
+
+def dtb_count(data):
+    offset = count = 0
+    while offset < len(data):
+        require(data[offset:offset + 4] == b"\xd0\x0d\xfe\xed", "invalid vendor DTB")
+        require(len(data) - offset >= 40, "truncated vendor DTB header")
+        size = struct.unpack_from(">I", data, offset + 4)[0]
+        require(40 <= size <= len(data) - offset, "invalid vendor DTB size")
+        offset += size
+        count += 1
+    require(count > 0, "vendor DTB section is empty")
+    return count
+
+
+def main():
+    if len(sys.argv) not in (5, 6):
+        sys.exit(__doc__)
+    template, source, ramdisk, output = map(Path, sys.argv[1:5])
+    evidence = Path(sys.argv[5]) if len(sys.argv) == 6 else None
+    require(not output.exists() and not output.is_symlink(), "output already exists")
+    if evidence:
+        require(not evidence.exists() and not evidence.is_symlink(), "evidence already exists")
+    stock = read_file(template)
+    require(len(stock) >= 4096 and stock[:8] == b"ANDROID!", "invalid boot template")
+    require(struct.unpack_from("<I", stock, 40)[0] == 2, "requires header v2")
+    page = struct.unpack_from("<I", stock, 36)[0]
+    require(2048 <= page <= 65536 and page & (page - 1) == 0, "invalid page size")
+    require(len(stock) % page == 0, "template is not page aligned")
+    require(struct.unpack_from("<I", stock, 1644)[0] == 1660, "invalid v2 header size")
+    require(struct.unpack_from("<I", stock, 24)[0] == 0, "second payload unsupported")
+    require(struct.unpack_from("<I", stock, 1632)[0] == 0, "recovery DTBO unsupported")
+    kernel_size = struct.unpack_from("<I", stock, 8)[0]
+    ramdisk_size = struct.unpack_from("<I", stock, 16)[0]
+    dtb_size = struct.unpack_from("<I", stock, 1648)[0]
+    align = lambda size: (size + page - 1) // page * page
+    dtb_offset = page + align(kernel_size) + align(ramdisk_size)
+    require(dtb_offset + dtb_size <= len(stock), "vendor DTB exceeds template")
+    dtbs = stock[dtb_offset:dtb_offset + dtb_size]
+    count = dtb_count(dtbs)
+    image = read_file(source)
+    require(len(image) >= 64 and image[56:60] == b"ARM\x64", "not an ARM64 Image")
+    initrd = read_file(ramdisk)
+    require(gzip.decompress(initrd)[:6] in (b"070701", b"070702"), "ramdisk is not gzip newc")
+    payload = gzip.compress(image, compresslevel=9, mtime=0)
+    header = bytearray(stock[:page])
+    struct.pack_into("<I", header, 8, len(payload))
+    struct.pack_into("<I", header, 16, len(initrd))
+    ident = hashlib.sha1()
+    for data in (payload, initrd, b"", b"", dtbs):
+        ident.update(data)
+        ident.update(struct.pack("<I", len(data)))
+    header[576:608] = ident.digest() + bytes(12)
+    info = run("avbtool", "info_image", "--image", template).decode()
+    require(re.search(r"^Algorithm:\s+NONE$", info, re.M), "signed template unsupported")
+    require(re.search(r"^\s*Partition Name:\s+boot$", info, re.M), "template is not boot")
+    salt = re.search(r"^\s*Salt:\s*([0-9a-f]+)\s*$", info, re.M)
+    require(salt, "template salt is missing")
+    props = re.findall(r"^\s*Prop: (\S+) -> '(.*)'$", info, re.M)
+    hash_algorithm = re.search(r"^\s*Hash Algorithm:\s+(\S+)$", info, re.M)
+    require(hash_algorithm, "template hash algorithm is missing")
+    rollback = re.search(r"^Rollback Index:\s+(\d+)$", info, re.M)
+    rollback_location = re.search(r"^Rollback Index Location:\s+(\d+)$", info, re.M)
+    flags = re.search(r"^Flags:\s+(\d+)$", info, re.M)
+    require(rollback and rollback_location and flags, "incomplete AVB metadata")
+    packed = bytes(header)
+    for data in (payload, initrd, dtbs):
+        packed += data + bytes(-len(data) % page)
+    require(len(packed) + 65536 < len(stock), "image exceeds boot partition")
+    with tempfile.TemporaryDirectory(prefix="legacy-v2-", dir=output.parent) as tmp:
+        directory = Path(tmp)
+        # Verify the original metadata before deriving an unsigned replacement.
+        original = directory / "original"
+        original.mkdir()
+        (original / "boot.img").symlink_to(template.resolve())
+        run("avbtool", "verify_image", "--image", original / "boot.img")
+        candidate = directory / "boot.img"
+        candidate.write_bytes(packed)
+        run("avbtool", "add_hash_footer", "--image", candidate,
+            "--partition_size", len(stock), "--partition_name", "boot",
+            "--hash_algorithm", hash_algorithm[1], "--algorithm", "NONE",
+            "--salt", salt[1], "--rollback_index", rollback[1],
+            "--rollback_index_location", rollback_location[1], "--flags", flags[1],
+            *[a for key, value in props for a in ("--prop", f"{key}:{value}")])
+        verified = run("avbtool", "verify_image", "--image", candidate)
+        unpacked = directory / "unpacked"
+        described = run("unpack_bootimg", "--boot_img", candidate, "--out", unpacked)
+        require((unpacked / "kernel").read_bytes() == payload, "kernel verification failed")
+        require((unpacked / "ramdisk").read_bytes() == initrd, "ramdisk verification failed")
+        require((unpacked / "dtb").read_bytes() == dtbs, "vendor DTB verification failed")
+        generated = candidate.read_bytes()
+        require(len(generated) == len(stock), "partition size changed")
+        require(generated[:page] == header, "header verification failed")
+        restored = bytearray(header)
+        for start, end in ((8, 12), (16, 20), (576, 608)):
+            restored[start:end] = stock[start:end]
+        require(restored == stock[:page], "unexpected header modification")
+        # Publish only a verified image, without replacing an existing path.
+        os.link(candidate, output)
+    record = dict(bytes=len(generated), sha256=sha(generated),
+                  template_sha256=sha(stock), image_sha256=sha(image),
+                  ramdisk_sha256=sha(initrd), vendor_dtbs=count,
+                  vendor_dtbs_sha256=sha(dtbs), header_version=2, page_size=page)
+    if evidence:
+        evidence.mkdir(parents=True, exist_ok=False)
+        (evidence / "boot-verification.txt").write_bytes(verified)
+        (evidence / "boot-header.txt").write_bytes(described)
+        (evidence / "boot-format.json").write_text(json.dumps(record, indent=2) + "\n")
+    print(json.dumps(record))
+
+
+if __name__ == "__main__":
+    main()
