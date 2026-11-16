@@ -6,6 +6,7 @@
 #include <linux/backlight.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
+#include <linux/errno.h>
 #include <linux/gpio/consumer.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
@@ -46,6 +47,41 @@ struct samsung_amb655uv01 *to_samsung_amb655uv01(struct drm_panel *panel)
 	return container_of(panel, struct samsung_amb655uv01, panel);
 }
 
+static void samsung_amb655uv01_write(struct mipi_dsi_multi_context *ctx,
+				   const void *data, size_t len)
+{
+	struct mipi_dsi_device *dsi = ctx->dsi;
+	const struct mipi_dsi_host_ops *ops = dsi->host->ops;
+	struct mipi_dsi_msg msg = {
+		.channel = dsi->channel,
+		.type = MIPI_DSI_DCS_LONG_WRITE,
+		.tx_buf = data,
+		.tx_len = len,
+	};
+	ssize_t ret;
+
+	if (ctx->accum_err)
+		return;
+	if (!ops || !ops->transfer) {
+		ctx->accum_err = -EOPNOTSUPP;
+		return;
+	}
+
+	/* The factory sequence uses long packets even for two-byte writes. */
+	if (dsi->mode_flags & MIPI_DSI_MODE_LPM)
+		msg.flags |= MIPI_DSI_MSG_USE_LPM;
+	ret = ops->transfer(dsi->host, &msg);
+	if (ret < 0) {
+		ctx->accum_err = ret;
+		dev_err(&dsi->dev, "Failed to write panel command: %zd\n", ret);
+	}
+}
+
+#define samsung_amb655uv01_write_seq(ctx, seq...) do { \
+	static const u8 data[] = { seq }; \
+	samsung_amb655uv01_write(ctx, data, ARRAY_SIZE(data)); \
+} while (0)
+
 static void samsung_amb655uv01_reset(struct samsung_amb655uv01 *ctx)
 {
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
@@ -62,9 +98,9 @@ static int samsung_amb655uv01_on(struct samsung_amb655uv01 *ctx)
 
 	ctx->dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x9d, 0x01);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x9e,
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0x9d, 0x01);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0x9e,
 				     0x11, 0x00, 0x00, 0x89, 0x30, 0x80, 0x09,
 				     0x60, 0x04, 0x38, 0x00, 0x30, 0x02, 0x1c,
 				     0x02, 0x1c, 0x02, 0x00, 0x02, 0x52, 0x00,
@@ -78,51 +114,63 @@ static int samsung_amb655uv01_on(struct samsung_amb655uv01 *ctx)
 				     0x19, 0xf8, 0x1a, 0x38, 0x1a, 0x78, 0x1a,
 				     0xb6, 0x2a, 0xb6, 0x2a, 0xf4, 0x2a, 0xf4,
 				     0x4b, 0x34, 0x63, 0x74);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5); //KEY DISABLE
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5); //KEY DISABLE
 	mipi_dsi_dcs_exit_sleep_mode_multi(&dsi_ctx);
 	mipi_dsi_msleep(&dsi_ctx, 20);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a); //KEY ENABLE
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf5, 0x85);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x01);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf5, 0x77);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x03);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf5, 0x10, 0x40, 0x10, 0x40);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x3b);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf5, 0x25);
-	mipi_dsi_dcs_set_tear_on_multi(&dsi_ctx, MIPI_DSI_DCS_TEAR_MODE_VBLANK);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a); //KEY ENABLE
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf5, 0x85);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x01);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf5, 0x77);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x03);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf5, 0x10, 0x40, 0x10, 0x40);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x3b);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf5, 0x25);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, MIPI_DCS_SET_TEAR_ON, 0x00);
 	/* Disable the command page for the following address writes. */
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
 	mipi_dsi_dcs_set_column_address_multi(&dsi_ctx, 0x0000, 0x0437);
 	mipi_dsi_dcs_set_page_address_multi(&dsi_ctx, 0x0000, 0x095f);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a); //ENABLE
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x05);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd7, 0x07, 0x02, 0x40);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf5, 0x85);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x02);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf8, 0xc4);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x04);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf8,
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a); //ENABLE
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x05);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xd7, 0x07, 0x02, 0x40);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf5, 0x85);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x02);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf8, 0xc4);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x04);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf8,
 				     0x41, 0x47, 0x11, 0xb8, 0xb8);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x02);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf8, 0xcc);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x08);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf2, 0xa0);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5); //DISABLED
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x02);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf8, 0xcc);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x08);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf2, 0xa0);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5); //DISABLED
 	mipi_dsi_msleep(&dsi_ctx, 110); //Sleep for 110ms
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a); //ENABLED
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf5, 0x87);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x06);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb7, 0x01);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x05);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb7, 0x13);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb7, 0x01, 0x37);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5); //DISABLED
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY,
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a); //ENABLED
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf5, 0x87);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x06);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb7, 0x01);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x05);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb7, 0x13);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb7, 0x01, 0x37);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5); //DISABLED
+	samsung_amb655uv01_write_seq(&dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY,
 				     0x20);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a); //RE_ENABLED
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x10);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_WRITE_POWER_SAVE, 0x00);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5); //Disable Key
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a); //RE_ENABLED
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x10);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, MIPI_DCS_WRITE_POWER_SAVE, 0x00);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5); //Disable Key
 	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx); //Turn on screen
 
 	return dsi_ctx.accum_err;
@@ -160,21 +208,21 @@ static int samsung_amb655uv01_set_refresh(struct samsung_amb655uv01 *ctx)
 			hz = drm_mode_vrefresh(mode) < 75 ? 60 : 90;
 	}
 	ctx->dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
 	if (hz == 90)
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x10);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x10);
 	else
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x00);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x69);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0x60, 0x00);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x69);
 	if (hz == 90)
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xe6, 0x00);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0x00);
 	else
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xe6, 0x02);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x77);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xe6, 0xb3);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+		samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0x02);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xb0, 0x77);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xe6, 0xb3);
+	samsung_amb655uv01_write_seq(&dsi_ctx, 0xf0, 0xa5, 0xa5);
 	ctx->dsi->mode_flags = flags;
 	if (!dsi_ctx.accum_err)
 		dev_info(&ctx->dsi->dev, "stock panel refresh=%u link-target=830000000\n", hz);
